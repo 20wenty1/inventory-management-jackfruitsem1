@@ -1,11 +1,17 @@
 import streamlit as st
-import csv, json, os, joblib
+import csv, json, os, joblib, re
 
+# --------------------------------------------------------
+# STREAMLIT CONFIG
+# --------------------------------------------------------
 st.set_page_config(page_title="AI Math Proof Verifier", layout="wide")
-st.title("🤖 AI Math Proof Verifier")
-st.write("Upload a dataset or enter a proof to check validity using the trained ML model.")
+st.title("🤖 AI Math Proof Verifier (Hybrid ML + Logic Rules)")
+st.write("Enter a mathematical proof below or upload a dataset for analysis. "
+         "This system combines machine learning with basic rule-based reasoning.")
 
-# Load model safely
+# --------------------------------------------------------
+# LOAD MODEL
+# --------------------------------------------------------
 @st.cache_resource
 def load_model():
     try:
@@ -18,9 +24,39 @@ def load_model():
 
 vec, model = load_model()
 
+# --------------------------------------------------------
+# RULE-BASED LOGIC CHECK
+# --------------------------------------------------------
+def rule_based_check(proof_text):
+    text = proof_text.lower()
+    valid_patterns = [
+        "assume", "therefore", "hence", "thus", "proved", "q.e.d", 
+        "let", "if", "for all", "=>", "base case", "induction", "contradiction"
+    ]
+    invalid_patterns = [
+        "2=1", "divide by zero", "all numbers are equal", "false proof",
+        "random", "because i think", "feels right", "nonsense"
+    ]
+    # Invalid patterns override valid ones
+    if any(p in text for p in invalid_patterns):
+        return "❌ Invalid", 0.95
+    # Strong proof language = likely valid
+    if any(p in text for p in valid_patterns):
+        return "✅ Valid", 0.85
+    return None, None
+
+# --------------------------------------------------------
+# HYBRID ML + RULE-BASED VERIFIER
+# --------------------------------------------------------
 def verify_with_model(proof_text):
+    # Rule-based first
+    verdict, conf = rule_based_check(proof_text)
+    if verdict:
+        return verdict, conf
+
+    # ML model fallback
     if not vec or not model:
-        return "Error", 0.0
+        return "Error loading model", 0.0
     X = vec.transform([proof_text])
     probs = model.predict_proba(X)[0]
     p_invalid, p_valid = probs
@@ -28,25 +64,30 @@ def verify_with_model(proof_text):
     confidence = max(p_invalid, p_valid)
     return verdict, confidence
 
-# --- Section 1: Manual Proof Entry ---
-st.subheader("🔹 Verify a Single Proof")
+# --------------------------------------------------------
+# SINGLE PROOF ANALYSIS
+# --------------------------------------------------------
+st.subheader("✍️ Verify a Single Proof")
 
-proof_text = st.text_area("✍️ Enter your proof text:")
+proof_text = st.text_area("Enter your proof text:")
 
 if st.button("🔍 Verify Proof"):
     if proof_text.strip():
         verdict, confidence = verify_with_model(proof_text)
-        st.markdown(f"### {verdict}")
+        color = "green" if "Valid" in verdict else "red"
+        st.markdown(f"### <span style='color:{color}'>{verdict}</span>", unsafe_allow_html=True)
         st.markdown(f"**Confidence:** {confidence:.2f}")
-        if verdict.startswith("✅"):
-            st.success("Proof shows structured logical reasoning.")
-        else:
-            st.error("Proof seems logically inconsistent or incomplete.")
+        if "Valid" in verdict:
+            st.success("This proof demonstrates consistent logical reasoning and structure.")
+        elif "Invalid" in verdict:
+            st.error("The proof appears logically inconsistent or incomplete.")
     else:
         st.warning("Please enter a proof to analyze.")
 
-# --- Section 2: Upload CSV and Batch Analyze ---
-st.subheader("📂 Upload CSV for Bulk Proof Verification")
+# --------------------------------------------------------
+# BATCH ANALYSIS (CSV UPLOAD)
+# --------------------------------------------------------
+st.subheader("📂 Upload a CSV File for Bulk Proof Verification")
 uploaded_file = st.file_uploader("Upload a CSV file (must contain 'proof_text' column)", type=["csv"])
 
 if uploaded_file is not None:
@@ -55,20 +96,20 @@ if uploaded_file is not None:
         results = []
         for i, row in enumerate(reader, start=1):
             text = row.get("proof_text", "").strip()
-            if text:
-                verdict, conf = verify_with_model(text)
-                results.append({
-                    "id": i,
-                    "proof_text": text[:100] + ("..." if len(text) > 100 else ""),
-                    "verdict": verdict,
-                    "confidence": round(conf, 2)
-                })
+            if not text:
+                continue
+            verdict, conf = verify_with_model(text)
+            results.append({
+                "id": i,
+                "proof_text": text[:150] + ("..." if len(text) > 150 else ""),
+                "verdict": verdict,
+                "confidence": round(conf, 2)
+            })
 
         if results:
             st.success(f"✅ Processed {len(results)} proofs.")
             st.dataframe(results)
 
-            # Save downloadable results
             output_file = "verified_results.csv"
             with open(output_file, "w", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=results[0].keys())
@@ -82,9 +123,15 @@ if uploaded_file is not None:
                     file_name="verified_results.csv",
                     mime="text/csv"
                 )
-
         else:
-            st.warning("No valid proofs found in the uploaded file.")
+            st.warning("No proofs found in the uploaded file.")
 
     except Exception as e:
-        st.error(f"Error reading file: {e}")
+        st.error(f"Error processing file: {e}")
+
+# --------------------------------------------------------
+# FOOTER
+# --------------------------------------------------------
+st.markdown("---")
+st.caption("Hackathon Prototype · AI Math Proof Verifier · Hybrid ML + Rule Logic")
+

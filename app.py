@@ -5,9 +5,8 @@ import csv, json, os, joblib, re
 # STREAMLIT CONFIG
 # --------------------------------------------------------
 st.set_page_config(page_title="AI Math Proof Verifier", layout="wide")
-st.title("🤖 AI Math Proof Verifier (Hybrid ML + Logic Rules)")
-st.write("Enter a mathematical proof below or upload a dataset for analysis. "
-         "This system combines machine learning with basic rule-based reasoning.")
+st.title("🤖 AI Math Proof Verifier (Balanced ML + Rules)")
+st.write("Hybrid system: Machine Learning for large datasets + Rule-based reasoning for quick checks.")
 
 # --------------------------------------------------------
 # LOAD MODEL
@@ -25,36 +24,37 @@ def load_model():
 vec, model = load_model()
 
 # --------------------------------------------------------
-# RULE-BASED LOGIC CHECK
+# RULE-BASED LOGIC CHECK (used for short inputs only)
 # --------------------------------------------------------
 def rule_based_check(proof_text):
     text = proof_text.lower()
     valid_patterns = [
-        "assume", "therefore", "hence", "thus", "proved", "q.e.d", 
-        "let", "if", "for all", "=>", "base case", "induction", "contradiction"
+        "assume", "therefore", "hence", "thus", "proved", "q.e.d",
+        "let", "for all", "induction", "contradiction"
     ]
     invalid_patterns = [
-        "2=1", "divide by zero", "all numbers are equal", "false proof",
-        "random", "because i think", "feels right", "nonsense"
+        "2=1", "divide by zero", "false proof", "all numbers are equal",
+        "random", "feels right", "wrong"
     ]
-    # Invalid patterns override valid ones
     if any(p in text for p in invalid_patterns):
         return "❌ Invalid", 0.95
-    # Strong proof language = likely valid
     if any(p in text for p in valid_patterns):
         return "✅ Valid", 0.85
     return None, None
 
 # --------------------------------------------------------
-# HYBRID ML + RULE-BASED VERIFIER
+# HYBRID VERIFIER (smart switch)
 # --------------------------------------------------------
-def verify_with_model(proof_text):
-    # Rule-based first
-    verdict, conf = rule_based_check(proof_text)
-    if verdict:
-        return verdict, conf
+def verify_with_model(proof_text, use_rules=True):
+    text_len = len(proof_text.strip().split())
 
-    # ML model fallback
+    # Only use rule-based logic if the text is short (< 20 words)
+    if use_rules and text_len < 20:
+        verdict, conf = rule_based_check(proof_text)
+        if verdict:
+            return verdict, conf
+
+    # Otherwise use ML model
     if not vec or not model:
         return "Error loading model", 0.0
     X = vec.transform([proof_text])
@@ -73,13 +73,13 @@ proof_text = st.text_area("Enter your proof text:")
 
 if st.button("🔍 Verify Proof"):
     if proof_text.strip():
-        verdict, confidence = verify_with_model(proof_text)
+        verdict, confidence = verify_with_model(proof_text, use_rules=True)
         color = "green" if "Valid" in verdict else "red"
         st.markdown(f"### <span style='color:{color}'>{verdict}</span>", unsafe_allow_html=True)
         st.markdown(f"**Confidence:** {confidence:.2f}")
         if "Valid" in verdict:
-            st.success("This proof demonstrates consistent logical reasoning and structure.")
-        elif "Invalid" in verdict:
+            st.success("This proof demonstrates consistent logical reasoning.")
+        else:
             st.error("The proof appears logically inconsistent or incomplete.")
     else:
         st.warning("Please enter a proof to analyze.")
@@ -98,7 +98,8 @@ if uploaded_file is not None:
             text = row.get("proof_text", "").strip()
             if not text:
                 continue
-            verdict, conf = verify_with_model(text)
+            # ML model only for dataset
+            verdict, conf = verify_with_model(text, use_rules=False)
             results.append({
                 "id": i,
                 "proof_text": text[:150] + ("..." if len(text) > 150 else ""),
@@ -133,5 +134,4 @@ if uploaded_file is not None:
 # FOOTER
 # --------------------------------------------------------
 st.markdown("---")
-st.caption("Hackathon Prototype · AI Math Proof Verifier · Hybrid ML + Rule Logic")
-
+st.caption("Hackathon Prototype · AI Math Proof Verifier · Hybrid ML + Rules (CSV uses ML only)")

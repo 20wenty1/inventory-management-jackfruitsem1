@@ -1,98 +1,90 @@
 import streamlit as st
-import csv
-import json
-import os
-
-# ========== CORE LOGIC ==========
-
-def verify_proof(proof_text, is_correct, flaw_type, flaw_start, flaw_end):
-    if is_correct == "1" or is_correct == 1:
-        verdict = "Valid"
-        explanation = "All steps are logically consistent with the theorem."
-        score = 1.0
-        location = "N/A"
-    else:
-        verdict = "Invalid"
-        explanation = f"Detected flaw type: {flaw_type}. The error lies between positions {flaw_start}-{flaw_end}."
-        score = 0.2 if flaw_type != "none" else 0.5
-        location = f"{flaw_start}-{flaw_end}" if flaw_start != "" else "Unknown"
-    return {
-        "verdict": verdict,
-        "location": location,
-        "explanation": explanation,
-        "score": score
-    }
-
-def analyze_dataset(file_path):
-    results = []
-    with open(file_path, newline='', encoding='utf-8') as csvfile:
-        reader = csv.DictReader(csvfile)
-        for row in reader:
-            proof_text = row["proof_text"]
-            is_correct = row["is_correct"]
-            flaw_type = row.get("flaw_type", "unknown")
-            flaw_start = row.get("flaw_span_start", "-1")
-            flaw_end = row.get("flaw_span_end", "-1")
-            result = verify_proof(proof_text, is_correct, flaw_type, flaw_start, flaw_end)
-            results.append({
-                "proof_id": row["proof_id"],
-                "domain": row["domain"],
-                "theorem_name": row["theorem_name"],
-                "verdict": result["verdict"],
-                "location": result["location"],
-                "explanation": result["explanation"],
-                "score": result["score"]
-            })
-    return results
-
-# ========== STREAMLIT UI ==========
+import csv, json, os, joblib
 
 st.set_page_config(page_title="AI Math Proof Verifier", layout="wide")
 st.title("🤖 AI Math Proof Verifier")
-st.write("This lightweight app analyzes mathematical proofs and detects logical flaws using only built-in libraries.")
+st.write("Upload a dataset or enter a proof to check validity using the trained ML model.")
 
-file_path = "math_proof_verifier_dataset_14000_13.csv"
+# Load model safely
+@st.cache_resource
+def load_model():
+    try:
+        vec = joblib.load("vectorizer.pkl")
+        model = joblib.load("model.pkl")
+        return vec, model
+    except Exception as e:
+        st.error(f"⚠️ Could not load ML model: {e}")
+        return None, None
 
-if not os.path.exists(file_path):
-    st.error("❌ CSV file not found. Please ensure 'math_proof_verifier_dataset_14000_13.csv' is in the same folder.")
-else:
-    st.subheader("📂 Dataset Information")
-    with open(file_path, newline='', encoding='utf-8') as f:
-        reader = csv.reader(f)
-        headers = next(reader)
-        preview = [next(reader) for _ in range(5)]
-        st.write("**Headers:**", headers)
-        st.write("**Preview (first 5 rows):**")
-        st.table(preview)
+vec, model = load_model()
 
-    if st.button("🔍 Run Proof Verification"):
-        with st.spinner("Analyzing dataset... please wait..."):
-            results = analyze_dataset(file_path)
-            total = len(results)
-            valid = sum(1 for r in results if r["verdict"] == "Valid")
-            invalid = total - valid
-            avg_score = sum(r["score"] for r in results) / total
+def verify_with_model(proof_text):
+    if not vec or not model:
+        return "Error", 0.0
+    X = vec.transform([proof_text])
+    probs = model.predict_proba(X)[0]
+    p_invalid, p_valid = probs
+    verdict = "✅ Valid" if p_valid >= 0.5 else "❌ Invalid"
+    confidence = max(p_invalid, p_valid)
+    return verdict, confidence
 
-            st.success("✅ Analysis Complete!")
-            st.write(f"**Total proofs analyzed:** {total}")
-            st.write(f"**Valid proofs:** {valid}")
-            st.write(f"**Invalid proofs:** {invalid}")
-            st.write(f"**Average score:** {avg_score:.2f}")
+# --- Section 1: Manual Proof Entry ---
+st.subheader("🔹 Verify a Single Proof")
 
-            # Show first few results
-            st.subheader("📈 Sample Results")
-            st.table(results[:10])
+proof_text = st.text_area("✍️ Enter your proof text:")
 
-            # Save results to CSV + JSONL
-            with open("results.csv", "w", newline='', encoding="utf-8") as f:
+if st.button("🔍 Verify Proof"):
+    if proof_text.strip():
+        verdict, confidence = verify_with_model(proof_text)
+        st.markdown(f"### {verdict}")
+        st.markdown(f"**Confidence:** {confidence:.2f}")
+        if verdict.startswith("✅"):
+            st.success("Proof shows structured logical reasoning.")
+        else:
+            st.error("Proof seems logically inconsistent or incomplete.")
+    else:
+        st.warning("Please enter a proof to analyze.")
+
+# --- Section 2: Upload CSV and Batch Analyze ---
+st.subheader("📂 Upload CSV for Bulk Proof Verification")
+uploaded_file = st.file_uploader("Upload a CSV file (must contain 'proof_text' column)", type=["csv"])
+
+if uploaded_file is not None:
+    try:
+        reader = csv.DictReader(uploaded_file.read().decode("utf-8").splitlines())
+        results = []
+        for i, row in enumerate(reader, start=1):
+            text = row.get("proof_text", "").strip()
+            if text:
+                verdict, conf = verify_with_model(text)
+                results.append({
+                    "id": i,
+                    "proof_text": text[:100] + ("..." if len(text) > 100 else ""),
+                    "verdict": verdict,
+                    "confidence": round(conf, 2)
+                })
+
+        if results:
+            st.success(f"✅ Processed {len(results)} proofs.")
+            st.dataframe(results)
+
+            # Save downloadable results
+            output_file = "verified_results.csv"
+            with open(output_file, "w", newline="", encoding="utf-8") as f:
                 writer = csv.DictWriter(f, fieldnames=results[0].keys())
                 writer.writeheader()
                 writer.writerows(results)
 
-            with open("results.jsonl", "w", encoding="utf-8") as f:
-                for r in results:
-                    f.write(json.dumps(r) + "\n")
+            with open(output_file, "r", encoding="utf-8") as f:
+                st.download_button(
+                    label="⬇️ Download Results as CSV",
+                    data=f.read(),
+                    file_name="verified_results.csv",
+                    mime="text/csv"
+                )
 
-            st.success("Results saved as 'results.csv' and 'results.jsonl'")
-            with open("results.csv", "rb") as f:
-                st.download_button("⬇️ Download results.csv", data=f, file_name="results.csv")
+        else:
+            st.warning("No valid proofs found in the uploaded file.")
+
+    except Exception as e:
+        st.error(f"Error reading file: {e}")

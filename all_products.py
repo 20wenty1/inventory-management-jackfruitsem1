@@ -55,10 +55,10 @@ def fetch(query=None):
 # --------- CUMULATIVE SEARCH RESULTS ---------
 if "search_results" not in st.session_state:
     st.session_state.search_results = pd.DataFrame(columns=["ID", "Name", "Price", "Quantity"])
-    
+
 with col1:
     if st.button("Search"):
-        new_result = fetch_products(product_name.strip())
+        new_result = fetch(product_name.strip())
 
         # Add new results below previous ones
         st.session_state.search_results = pd.concat(
@@ -68,7 +68,7 @@ with col1:
 
 with col2:
     if st.button("Show All"):
-        st.session_state.search_results = fetch_products()
+        st.session_state.search_results = fetch()
 
 # --------- DISPLAY TABLE ---------
 if not st.session_state.search_results.empty:

@@ -2,15 +2,42 @@ import sqlite3
 import streamlit as st
 import pandas as pd
 
-st.title("All Products")
+# ---------------- STYLE ----------------
+st.markdown("""
+<style>
+.box {
+    border: 2px solid #1b4f72;
+    padding: 15px;
+    border-radius: 5px;
+    background-color: #f0f6ff;
+}
+.title-bar {
+    background-color: #1b4f72;
+    color: white;
+    padding: 6px;
+    text-align: center;
+    font-size: 22px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    border-radius: 3px;
+}
+.btn {
+    background-color: #1b4f72 !important;
+    color: white !important;
+    font-weight: bold !important;
+}
+</style>
+""", unsafe_allow_html=True)
 
-# ---------- SEARCH BAR ----------
-search_query = st.text_input("Product Name", "")
+# ---------------- UI ----------------
+st.markdown('<div class="box">', unsafe_allow_html=True)
+st.markdown('<div class="title-bar">All Products</div>', unsafe_allow_html=True)
+
+product_name = st.text_input("Product Name")
 
 col1, col2 = st.columns(2)
 
-# Connect to DB
-def load_data(query=None):
+def fetch(query=None):
     con = sqlite3.connect("supermarket.db")
     cur = con.cursor()
 
@@ -25,23 +52,13 @@ def load_data(query=None):
     rows = cur.fetchall()
     con.close()
 
-    df = pd.DataFrame(rows, columns=["ID", "Name", "Price", "Stock"])
-    return df
+    return pd.DataFrame(rows, columns=["ID", "Name", "Price", "Quantity"])
 
-# Default empty dataframe shown
-df = pd.DataFrame(columns=["ID", "Name", "Price", "Stock"])
-
-# SEARCH BUTTON
+df = pd.DataFrame()
 with col1:
-    if st.button("Search"):
-        df = load_data(search_query)
-
-# SHOW ALL BUTTON
-with col2:
-    if st.button("Show All"):
-        df = load_data()
-
-# DISPLAY TABLE
+    if st.button("Search", help="Search for product", use_container_width=True):
+        df = fetch(product_name)
 if not df.empty:
-    st.subheader("Results")
-    st.dataframe(df, use_container_width=True)
+    st.dataframe(df, use_container_width=True, height=300)
+
+st.markdown('</div>', unsafe_allow_html=True)

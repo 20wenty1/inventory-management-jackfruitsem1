@@ -21,22 +21,19 @@ st.markdown("""
     margin-bottom: 10px;
     border-radius: 3px;
 }
-.btn {
-    background-color: #1b4f72 !important;
-    color: white !important;
-    font-weight: bold !important;
-}
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- UI ----------------
+# ---------------- CONTAINER ----------------
 st.markdown('<div class="box">', unsafe_allow_html=True)
 st.markdown('<div class="title-bar">All Products</div>', unsafe_allow_html=True)
 
+# ---------------- SEARCH INPUT ----------------
 product_name = st.text_input("Product Name")
 
 col1, col2 = st.columns(2)
 
+# ---------------- LOAD DATA ----------------
 def fetch(query=None):
     con = sqlite3.connect("supermarket.db")
     cur = con.cursor()
@@ -54,11 +51,21 @@ def fetch(query=None):
 
     return pd.DataFrame(rows, columns=["ID", "Name", "Price", "Quantity"])
 
+
 df = pd.DataFrame()
+
+# ---------------- BUTTONS ----------------
 with col1:
-    if st.button("Search", help="Search for product", use_container_width=True):
+    if st.button("Search"):
         df = fetch(product_name)
+
+with col2:
+    if st.button("Show All"):
+        df = fetch()
+
+# ---------------- DISPLAY RESULTS ----------------
 if not df.empty:
     st.dataframe(df, use_container_width=True, height=300)
 
+# CLOSE BOX
 st.markdown('</div>', unsafe_allow_html=True)

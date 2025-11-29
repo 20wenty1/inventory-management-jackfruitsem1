@@ -52,20 +52,28 @@ def fetch(query=None):
     return pd.DataFrame(rows, columns=["ID", "Name", "Price", "Quantity"])
 
 
-df = pd.DataFrame()
-
-# ---------------- BUTTONS ----------------
+# --------- CUMULATIVE SEARCH RESULTS ---------
+if "search_results" not in st.session_state:
+    st.session_state.search_results = pd.DataFrame(columns=["ID", "Name", "Price", "Quantity"])
+    
 with col1:
     if st.button("Search"):
-        df = fetch(product_name)
+        new_result = fetch_products(product_name.strip())
+
+        # Add new results below previous ones
+        st.session_state.search_results = pd.concat(
+            [st.session_state.search_results, new_result],
+            ignore_index=True
+        )
 
 with col2:
     if st.button("Show All"):
-        df = fetch()
+        st.session_state.search_results = fetch_products()
 
-# ---------------- DISPLAY RESULTS ----------------
-if not df.empty:
-    st.dataframe(df, use_container_width=True, height=300)
+# --------- DISPLAY TABLE ---------
+if not st.session_state.search_results.empty:
+    st.dataframe(st.session_state.search_results, use_container_width=True, height=350)
+
 
 # CLOSE BOX
 st.markdown('</div>', unsafe_allow_html=True)
